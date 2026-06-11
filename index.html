@@ -35,7 +35,7 @@
     </div>
 
     <script type="text/babel">
-        // [본인의 Firebase 스크린샷 기반 설정]
+        // [Firebase 설정]
         const firebaseConfig = {
             apiKey: "AIzaSyCpTPlU1_6ddMmU_vYOh1OdlXvc9jOTvv1Y",
             authDomain: "lylics-test.firebaseapp.com",
@@ -52,14 +52,15 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
 
-        // 가짜 아이콘 리스트
+        // 아이콘 리스트
         const LucideIcon = ({ name, className = "w-4 h-4" }) => {
-            const icons = { Music: "🎵", Plus: "➕", Heart: "❤️", CheckCircle2: "✅" };
+            const icons = { Music: "🎵", Plus: "➕", Heart: "❤️", CheckCircle2: "✅", AlertCircle: "⚠️" };
             return <span className={className} style={{ display: 'inline-flex', alignItems: 'center' }}>{icons[name] || "•"}</span>;
         };
         const Music = (p) => <LucideIcon name="Music" {...p} />;
         const Heart = (p) => <LucideIcon name="Heart" {...p} />;
         const CheckCircle2 = (p) => <LucideIcon name="CheckCircle2" {...p} />;
+        const AlertCircle = (p) => <LucideIcon name="AlertCircle" {...p} />;
 
         function App() {
             const [user, setUser] = React.useState(null);
@@ -86,7 +87,7 @@
                 setTimeout(() => setNotification(null), 3000);
             };
 
-            // 1. 유저 인증 감시 (실패해도 화면은 뜨도록 방어작업 완료)
+            // 1. 유저 인증 감시 (비로그인 시 익명 상태로 화면 접근 허용)
             React.useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged((currentUser) => {
                     if (currentUser) {
@@ -95,7 +96,6 @@
                         auth.signInAnonymously()
                             .then(res => setUser(res.user))
                             .catch(() => {
-                                // 익명로그인이 차단되었을 때 임시 가상유저 생성해서 멈춤 방지
                                 setUser({ uid: "local_guest", isAnonymous: true });
                             });
                     }
@@ -103,12 +103,9 @@
                 return () => unsubscribe();
             }, []);
 
-            // 2. 간단하고 직관적인 'lyrics' 컬렉션 구독 (멈춤 해결 핵심)
+            // 2. 'lyrics' 컬렉션 실시간 수신구독
             React.useEffect(() => {
-                if (!user) return;
-
                 const lyricsCollection = db.collection('lyrics');
-                
                 const unsubscribe = lyricsCollection.onSnapshot((snapshot) => {
                     const items = [];
                     snapshot.forEach((doc) => {
@@ -118,39 +115,46 @@
                     setLyrics(items);
                     setLyricsLoading(false);
                 }, (error) => {
-                    console.log("DB 차단됨 - 로컬 모드로 전환");
                     setLyricsLoading(false);
                 });
 
                 return () => unsubscribe();
-            }, [user]);
+            }, []);
 
             const handleEmailSignUp = async (e) => {
                 e.preventDefault();
+                setAuthError('');
                 try {
                     await auth.createUserWithEmailAndPassword(email, password);
-                    showNotification("🚀 회원가입 성공!");
+                    showNotification("🚀 회원가입 및 로그인 성공!");
                     setEmail(''); setPassword('');
-                } catch (err) { setAuthError("가입에 실패했습니다."); }
+                } catch (err) { setAuthError("가입 실패: 형식 확인 또는 이미 가입된 메일입니다."); }
             };
 
             const handleEmailSignIn = async (e) => {
                 e.preventDefault();
+                setAuthError('');
                 try {
                     await auth.signInWithEmailAndPassword(email, password);
                     showNotification("🔓 로그인 성공!");
                     setEmail(''); setPassword('');
-                } catch (err) { setAuthError("로그인 정보가 틀렸습니다."); }
+                } catch (err) { setAuthError("이메일 또는 비밀번호가 일치하지 않습니다."); }
             };
 
             const handleSignOut = async () => {
                 await auth.signOut();
                 setSelectedLyric(null);
+                setActiveTab('explore');
                 showNotification("로그아웃 되었습니다.");
             };
 
+            // 가사 등록 처리 (로그인 체크 강화)
             const handleSubmitLyrics = async (e) => {
                 e.preventDefault();
+                if (!user || user.isAnonymous) {
+                    showNotification("로그인 세션이 만료되었습니다.");
+                    return;
+                }
                 if (!songTitle.trim() || !artist.trim() || !lyricsText.trim()) return;
 
                 setIsSubmitLoading(true);
@@ -162,7 +166,7 @@
                         tags: tags.split(',').map(t => t.trim()).filter(t => t !== ''),
                         createdAt: Date.now(),
                         userId: user.uid,
-                        userEmail: user.isAnonymous ? "익명 작사가" : user.email,
+                        userEmail: user.email, // 익명 글쓰기를 배제하므로 전역 이메일 주소 삽입
                         likes: 0,
                         likedBy: []
                     });
@@ -176,7 +180,7 @@
             };
 
             const handleDeleteLyrics = async (id, writerId) => {
-                if (user.uid !== writerId) return;
+                if (!user || user.uid !== writerId) return;
                 if (!confirm("삭제하시겠습니까?")) return;
                 try {
                     await db.collection('lyrics').doc(id).delete();
@@ -187,6 +191,7 @@
 
             const handleLikeLyrics = async (lyricItem, e) => {
                 e.stopPropagation();
+                if (!user) return;
                 try {
                     const docRef = db.collection('lyrics').doc(lyricItem.id);
                     const likedBy = lyricItem.likedBy || [];
@@ -226,12 +231,12 @@
                             </nav>
 
                             <div className="text-sm font-medium">
-                                {user ? (
+                                {user && !user.isAnonymous ? (
                                     <div className="flex items-center gap-3">
-                                        <span className="text-xs text-violet-400 font-bold">{user.isAnonymous ? "🎨 익명접속" : user.email}</span>
-                                        {!user.isAnonymous && <button onClick={handleSignOut} className="px-2 py-1 text-xs bg-slate-800 rounded border border-slate-700 hover:text-rose-400">로그아웃</button>}
+                                        <span className="text-xs text-emerald-400 font-bold">🟢 {user.email}</span>
+                                        <button onClick={handleSignOut} className="px-2 py-1 text-xs bg-slate-800 rounded border border-slate-700 hover:text-rose-400">로그아웃</button>
                                     </div>
-                                ) : <span className="text-slate-600">연결 대기...</span>}
+                                ) : <span className="text-xs text-slate-500 font-bold">⚫ 비로그인 상태</span>}
                             </div>
                         </div>
                     </header>
@@ -241,7 +246,7 @@
                             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                                 <div className={selectedLyric ? 'lg:col-span-5 flex flex-col gap-6' : 'lg:col-span-8 flex flex-col gap-6'}>
                                     <div className="flex flex-col sm:flex-row justify-between gap-4 items-center">
-                                        <h2 className="text-xl font-black text-white">📖 가사 리스트 ({lyrics.length})</h2>
+                                        <h2 className="text-xl font-black text-white">📖 공유 가사 리스트 ({lyrics.length})</h2>
                                         <input type="text" placeholder="제목, 가수 검색..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="bg-slate-950/60 border border-slate-800 rounded-xl py-2 px-4 text-sm text-slate-300 w-full sm:w-64 focus:outline-none" />
                                     </div>
 
@@ -250,92 +255,4 @@
                                     ) : lyrics.length === 0 ? (
                                         <div className="text-center py-12 text-slate-500 bg-slate-950/20 rounded-2xl border border-slate-800">아직 등록된 가사가 없습니다. 첫 가사를 작성해 보세요!</div>
                                     ) : (
-                                        <div className={`grid grid-cols-1 ${selectedLyric ? 'grid-cols-1' : 'md:grid-cols-2'} gap-4`}>
-                                            {filteredLyrics.map((lyric) => (
-                                                <div key={lyric.id} onClick={() => setSelectedLyric(lyric)} className={`p-5 rounded-2xl border bg-slate-950/40 border-slate-800 hover:border-slate-700 cursor-pointer flex flex-col justify-between h-52 transition-all ${selectedLyric?.id === lyric.id ? 'border-violet-500 bg-slate-950/80' : ''}`}>
-                                                    <div>
-                                                        <p className="text-[10px] text-slate-500 mb-1">👤 {lyric.userEmail}</p>
-                                                        <h3 className="font-bold text-lg text-slate-100 line-clamp-1">{lyric.title}</h3>
-                                                        <p className="text-sm text-slate-400 font-semibold mb-2">by {lyric.artist}</p>
-                                                        <p className="text-xs text-slate-500 line-clamp-2 italic">"{lyric.lyrics}"</p>
-                                                    </div>
-                                                    <div className="flex items-center justify-between border-t border-slate-800/60 pt-3 mt-4">
-                                                        <div className="flex gap-1">
-                                                            {lyric.tags && lyric.tags.map((tag, i) => <span key={i} className="text-[10px] px-2 py-0.5 bg-slate-900 text-slate-400 rounded">#{tag}</span>)}
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <button onClick={(e) => handleLikeLyrics(lyric, e)} className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 text-slate-400 hover:text-rose-400 border border-slate-800 text-xs">
-                                                                <Heart /> {lyric.likes || 0}
-                                                            </button>
-                                                            {user && user.uid === lyric.userId && (
-                                                                <button onClick={(e) => { e.stopPropagation(); handleDeleteLyrics(lyric.id, lyric.userId); }} className="text-slate-600 hover:text-rose-400 text-xs">삭제</button>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {selectedLyric && (
-                                    <div className="lg:col-span-7 bg-slate-950/60 border border-slate-800 rounded-3xl p-6 flex flex-col justify-between shadow-2xl sticky top-24">
-                                        <div>
-                                            <div className="flex justify-between items-start border-b border-slate-800 pb-4 mb-4">
-                                                <div>
-                                                    <h2 className="text-2xl font-black text-white">{selectedLyric.title}</h2>
-                                                    <p className="text-base text-violet-400 font-bold">아티스트: {selectedLyric.artist}</p>
-                                                </div>
-                                                <button onClick={() => setSelectedLyric(null)} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 text-xs hover:text-slate-200">닫기</button>
-                                            </div>
-                                            <p className="text-slate-300 leading-relaxed whitespace-pre-line text-base italic bg-slate-900/40 p-6 rounded-2xl border border-slate-900 max-h-[50vh] overflow-y-auto">
-                                                {selectedLyric.lyrics}
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {!selectedLyric && user && user.isAnonymous && (
-                                    <div className="lg:col-span-4 bg-slate-950/60 border border-slate-800 rounded-3xl p-6 shadow-2xl h-fit">
-                                        <h3 className="text-sm font-bold mb-3 text-white">🔑 고유 회원 로그인/가입</h3>
-                                        {authError && <p className="text-xs text-rose-400 mb-2">⚠️ {authError}</p>}
-                                        <form onSubmit={authMode === 'login' ? handleEmailSignIn : handleEmailSignUp} className="space-y-3">
-                                            <input type="email" placeholder="이메일" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
-                                            <input type="password" placeholder="비밀번호" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
-                                            <button type="submit" className="w-full py-2 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold rounded-lg">{authMode === 'login' ? "로그인" : "회원가입"}</button>
-                                        </form>
-                                        <p className="text-center text-[11px] text-slate-500 mt-4">
-                                            {authMode === 'login' ? "계정이 없으신가요?" : "계정이 있으신가요?"}
-                                            <button onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} className="text-violet-400 ml-1 hover:underline font-bold">{authMode === 'login' ? "가입하기" : "로그인하기"}</button>
-                                        </p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {activeTab === 'submit' && (
-                            <div className="max-w-2xl mx-auto bg-slate-950/60 border border-slate-800 rounded-3xl p-8 shadow-2xl">
-                                <h2 className="text-xl font-black text-white mb-6">✨ 나만의 가사 노트 적기</h2>
-                                <form onSubmit={handleSubmitLyrics} className="space-y-4">
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <input type="text" required placeholder="노래 곡명" value={songTitle} onChange={(e) => setSongTitle(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-200 focus:outline-none" />
-                                        <input type="text" required placeholder="아티스트" value={artist} onChange={(e) => setArtist(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-200 focus:outline-none" />
-                                    </div>
-                                    <textarea required rows={6} placeholder="가사를 입력하세요. 클라우드 서버에 실시간 저장됩니다." value={lyricsText} onChange={(e) => setLyricsText(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none" />
-                                    <input type="text" placeholder="태그 (쉼표로 구분 예: 감성, 신남)" value={tags} onChange={(e) => setTags(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-200 focus:outline-none" />
-                                    <button type="submit" disabled={isSubmitLoading} className="w-full py-3 bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-bold rounded-xl shadow-lg">
-                                        {isSubmitLoading ? "저장 중..." : "공유 수첩에 올리기"}
-                                    </button>
-                                </form>
-                            </div>
-                        )}
-                    </main>
-                </div>
-            );
-        }
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+                                        <div className={`grid grid-cols-1 ${selectedLyric ? 'grid-cols-1' : 'md:grid-cols-2
