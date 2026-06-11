@@ -35,14 +35,15 @@
     </div>
 
     <script type="text/babel">
-        // [Firebase 설정]
+        // [Firebase 설정 - 정상 승인된 API Key로 수정 완료]
         const firebaseConfig = {
             apiKey: "AIzaSyCpTPlU1_6ddMmU_vYOh1OdlXvc9jOTvv1Y",
             authDomain: "lylics-test.firebaseapp.com",
             projectId: "lylics-test",
             storageBucket: "lylics-test.firebasestorage.app",
             messagingSenderId: "267755688321",
-            appId: "1:267755688321:web:a5c2cc0fc76f481bf2d880"
+            appId: "1:267755688321:web:a5c2cc0fc76f481bf2d880",
+            measurementId: "G-G7SD6BFS5X"
         };
 
         if (!firebase.apps.length) {
@@ -113,27 +114,33 @@
                 return () => unsubscribe();
             }, []);
 
-            // 한국어 에러 메시지 번역기
+            // 직관적인 한국어 에러 메시지 매핑
             const getFriendlyErrorMessage = (error) => {
                 switch (error.code) {
+                    case 'auth/api-key-not-valid':
+                        return 'Firebase API Key 인증에 실패했습니다. 설정을 다시 확인해 주세요.';
                     case 'auth/weak-password':
-                        return '비밀번호가 너무 짧습니다. 최소 6자 이상으로 설정해 주세요.';
+                        return '비밀번호가 너무 안전하지 않습니다. 6자 이상 입력해 주세요.';
                     case 'auth/email-already-in-use':
-                        return '이미 가입된 이메일 주소입니다. 로그인 모드로 시도해 주세요.';
+                        return '이미 다른 유저가 사용 중인 이메일 주소입니다.';
                     case 'auth/invalid-email':
-                        return '올바른 이메일 형식이 아닙니다.';
+                        return '유효하지 않은 이메일 형식입니다.';
                     case 'auth/wrong-password':
-                        return '비밀번호가 틀렸습니다.';
+                        return '입력하신 비밀번호가 올바르지 않습니다.';
                     case 'auth/user-not-found':
-                        return '등록되지 않은 가입 정보입니다.';
+                        return '해당 이메일로 가입된 계정을 찾을 수 없습니다.';
                     default:
-                        return error.message; // 기타 에러는 영어 메시지 출력
+                        return error.message;
                 }
             };
 
             const handleEmailSignUp = async (e) => {
                 e.preventDefault();
                 setAuthError('');
+                if (password.length < 6) {
+                    setAuthError('비밀번호는 반드시 6자 이상이어야 합니다.');
+                    return;
+                }
                 try {
                     await auth.createUserWithEmailAndPassword(email, password);
                     showNotification("🚀 회원가입 및 로그인 성공!");
@@ -185,7 +192,7 @@
                     });
 
                     setSongTitle(''); setArtist(''); setLyricsText(''); setTags('');
-                    showNotification("🎶 가사가 성공적으로 공유되었습니다!");
+                    showNotification("🎶 가사가 공유되었습니다!");
                     setActiveTab('explore');
                 } catch (err) {
                     showNotification("저장 실패");
@@ -327,63 +334,4 @@
                                             <button type="submit" className="w-full py-2 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold rounded-lg">{authMode === 'login' ? "로그인" : "회원가입 완료하기"}</button>
                                         </form>
                                         <p className="text-center text-[11px] text-slate-500 mt-4">
-                                            {authMode === 'login' ? "계정이 없으신가요?" : "계정이 있으신가요?"}
-                                            <button onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthError(''); }} className="text-violet-400 ml-1 hover:underline font-bold">{authMode === 'login' ? "가입하기" : "로그인하기"}</button>
-                                        </p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {activeTab === 'submit' && (
-                            <div className="max-w-2xl mx-auto">
-                                {user ? (
-                                    <div className="bg-slate-950/60 border border-slate-800 rounded-3xl p-8 shadow-2xl">
-                                        <h2 className="text-xl font-black text-white mb-6">✨ 나만의 가사 노트 적기</h2>
-                                        <form onSubmit={handleSubmitLyrics} className="space-y-4">
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                <input type="text" required placeholder="노래 곡명" value={songTitle} onChange={(e) => setSongTitle(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-200 focus:outline-none" />
-                                                <input type="text" required placeholder="아티스트" value={artist} onChange={(e) => setArtist(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-200 focus:outline-none" />
-                                            </div>
-                                            <textarea required rows={6} placeholder="가사를 입력하세요. 클라우드 서버에 실시간 저장됩니다." value={lyricsText} onChange={(e) => setLyricsText(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none" />
-                                            <input type="text" placeholder="태그 (쉼표로 구분 예: 감성, 신남)" value={tags} onChange={(e) => setTags(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-200 focus:outline-none" />
-                                            <button type="submit" disabled={isSubmitLoading} className="w-full py-3 bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-bold rounded-xl shadow-lg">
-                                                {isSubmitLoading ? "저장 중..." : "공유 수첩에 올리기"}
-                                            </button>
-                                        </form>
-                                    </div>
-                                ) : (
-                                    <div className="bg-slate-950/60 border border-slate-800 rounded-3xl p-8 text-center shadow-2xl py-16">
-                                        <div className="w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-800">
-                                            <AlertCircle className="text-violet-400 w-8 h-8" />
-                                        </div>
-                                        <h2 className="text-xl font-black text-white mb-2">로그인이 필요한 기능입니다</h2>
-                                        <p className="text-sm text-slate-400 mb-6 max-w-sm mx-auto">나만의 멋진 가사를 적고 저장하려면 먼저 이메일 로그인 또는 회원가입을 완료해 주세요.</p>
-                                        
-                                        <div className="max-w-xs mx-auto bg-slate-900 p-6 rounded-2xl border border-slate-800 text-left">
-                                            <h3 className="text-xs font-bold mb-3 text-slate-300 text-center">🔑 {authMode === 'login' ? '로그인' : '신규 회원가입'}</h3>
-                                            {authError && <p className="text-[11px] text-rose-400 mb-2 font-semibold">⚠️ {authError}</p>}
-                                            <form onSubmit={authMode === 'login' ? handleEmailSignIn : handleEmailSignUp} className="space-y-2">
-                                                <input type="email" placeholder="이메일" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
-                                                <input type="password" placeholder="비밀번호 (6자 이상)" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
-                                                <button type="submit" className="w-full py-2 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold rounded-lg">{authMode === 'login' ? "로그인" : "회원가입 완료하기"}</button>
-                                            </form>
-                                            <p className="text-center text-[10px] text-slate-500 mt-3">
-                                                {authMode === 'login' ? "처음 오셨나요?" : "이미 계정이 있나요?"}
-                                                <button onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthError(''); }} className="text-violet-400 ml-1 hover:underline font-bold">{authMode === 'login' ? "회원가입" : "로그인하기"}</button>
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </main>
-                </div>
-            );
-        }
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+                                            {authMode === 'login' ? "계정이 없으
